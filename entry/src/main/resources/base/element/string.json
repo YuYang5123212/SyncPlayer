@@ -11,6 +11,18 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "read_media_reason",
+      "value": "需要读取媒体文件以播放视频和字幕"
+    },
+    {
+      "name": "write_media_reason",
+      "value": "需要写入媒体文件以保存播放记录"
+    },
+    {
+      "name": "app_name",
+      "value": "视频播放器"
     }
   ]
 }

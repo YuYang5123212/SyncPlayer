@@ -3,12 +3,10 @@ import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { window, promptAction } from '@kit.ArkUI';
 
-// 声明全局持久化存储
 PersistentStorage.persistProp<string>('virtualFilesJson', '[]');
 PersistentStorage.persistProp<string>('lastPlayUri', '');
 PersistentStorage.persistProp<number>('lastPlayTime', 0);
 
-// 核心数据结构接口
 interface VideoItem {
   videoUri: string;
   name: string;
@@ -18,7 +16,6 @@ interface VideoItem {
   srtName: string | null;
 }
 
-// 解决 ERROR 1：为解析出的路径信息专门定义一个接口
 interface UriInfo {
   name: string;
   folderName: string;
@@ -60,6 +57,9 @@ struct Index {
   @State isSubtitleEnabled: boolean = true;
   @State videoRatio: number = 1.777;
 
+  // 新增：用于记录是否正在长按二倍速的状态
+  @State isLongPressing: boolean = false;
+
   private hideTimer: number = -1;
   private videoFd: number = -1;
   private srtFd: number = -1;
@@ -96,7 +96,6 @@ struct Index {
     this.currentFolderVideos = list;
   }
 
-  // 严格模式修复：明确返回类型为 UriInfo
   parseUriInfo(uri: string): UriInfo {
     let decoded: string = decodeURIComponent(uri);
     let parts: string[] = decoded.split('/');
@@ -119,7 +118,6 @@ struct Index {
       for (let uri of uris) {
         let info = this.parseUriInfo(uri);
         if (!this.allVideos.find(v => v.videoUri === uri)) {
-          // 严格模式修复：必须显式声明类型后推入数组
           let newItem: VideoItem = {
             videoUri: uri,
             name: info.name,
@@ -168,19 +166,15 @@ struct Index {
       this.virtualFilesJson = JSON.stringify(this.allVideos);
       this.updateCurrentFolderVideos();
 
-      // 修复 WARN 提示：废弃 AlertDialog.show，改用更现代的系统级 Toast 提示
-      promptAction.showToast({
-        message: `配对成功！为当前目录匹配了 ${matchCount} 个字幕文件。`,
-        duration: 3000
-      });
+      promptAction.showToast({ message: `配对成功！为当前目录匹配了 ${matchCount} 个字幕文件。`, duration: 3000 });
     } catch (err) {}
   }
 
   clearLibrary() {
-    this.allVideos = [];
+    this.allVideos =[];
     this.folders =[];
     this.currentFolder = '';
-    this.currentFolderVideos = [];
+    this.currentFolderVideos =[];
     this.virtualFilesJson = '[]';
   }
 
@@ -188,6 +182,7 @@ struct Index {
     this.currentPlayIndex = index;
     this.currentView = 'PLAYER';
     this.showPlaylistSheet = false;
+    this.isLongPressing = false;
 
     try {
       if (!this.avPlayer) {
@@ -371,12 +366,8 @@ struct Index {
   @Builder
   buildHomeView() {
     Row() {
-      // 左侧导航栏
       Column() {
-        Text('📚 我的学习资料')
-          .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333')
-          .padding({ top: 30, left: 20, bottom: 20 }).width('100%').textAlign(TextAlign.Start)
-
+        Text('📚 我的学习资料').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333').padding({ top: 30, left: 20, bottom: 20 }).width('100%').textAlign(TextAlign.Start)
         if (this.folders.length === 0) {
           Text('暂无目录').fontSize(14).fontColor(Color.Gray).margin({ top: 50 })
         } else {
@@ -385,33 +376,19 @@ struct Index {
               ListItem() {
                 Row() {
                   Text('📁').fontSize(18).margin({ right: 10 })
-                  Text(folder).fontSize(16).fontWeight(this.currentFolder === folder ? FontWeight.Bold : FontWeight.Normal)
-                    .fontColor(this.currentFolder === folder ? '#007DFF' : '#333')
-                    .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                }
-                .width('100%').padding(15)
-                .backgroundColor(this.currentFolder === folder ? 'rgba(0,125,255,0.1)' : 'transparent')
-                .borderRadius(8)
-              }
-              .onClick(() => {
-                this.currentFolder = folder;
-                this.updateCurrentFolderVideos();
-              })
+                  Text(folder).fontSize(16).fontWeight(this.currentFolder === folder ? FontWeight.Bold : FontWeight.Normal).fontColor(this.currentFolder === folder ? '#007DFF' : '#333').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }.width('100%').padding(15).backgroundColor(this.currentFolder === folder ? 'rgba(0,125,255,0.1)' : 'transparent').borderRadius(8)
+              }.onClick(() => { this.currentFolder = folder; this.updateCurrentFolderVideos(); })
             })
           }.width('100%').layoutWeight(1).padding({ left: 10, right: 10 })
         }
-
         Blank()
-        Button('🗑️ 清空媒体库').backgroundColor(Color.Transparent).fontColor(Color.Red).fontSize(14).margin({ bottom: 20 })
-          .onClick(() => this.clearLibrary())
-      }
-      .width(260).height('100%').backgroundColor('#F3F4F5')
+        Button('🗑️ 清空媒体库').backgroundColor(Color.Transparent).fontColor(Color.Red).fontSize(14).margin({ bottom: 20 }).onClick(() => this.clearLibrary())
+      }.width(260).height('100%').backgroundColor('#F3F4F5')
 
       Divider().vertical(true).color('#E5E5E5')
 
-      // 右侧文件区
       Column() {
-        // 顶部操作栏
         Row() {
           Text(this.currentFolder || '请先导入文件').fontSize(24).fontWeight(FontWeight.Medium).fontColor('#333')
           Blank()
@@ -419,20 +396,13 @@ struct Index {
           Button('2.导入匹配字幕').backgroundColor('#00A354').onClick(() => this.importSubtitles())
         }.width('100%').padding(20).border({ width: { bottom: 1 }, color: '#E5E5E5' })
 
-        // 解决 ERROR 2：将逻辑判断内联，完全剥离 let 的定义
         if (this.lastPlayUri !== '' && this.currentFolderVideos.some(v => v.videoUri === this.lastPlayUri)) {
           Row() {
-            Text('上次观看到：' + (this.currentFolderVideos.find(v => v.videoUri === this.lastPlayUri)?.name || '未知文件'))
-              .fontSize(14).fontColor('#007DFF').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text('上次观看到：' + (this.currentFolderVideos.find(v => v.videoUri === this.lastPlayUri)?.name || '未知文件')).fontSize(14).fontColor('#007DFF').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             Text('继续播放 ▶').fontSize(14).fontColor('#007DFF').fontWeight(FontWeight.Bold)
-          }
-          .width('95%').padding(12).margin({ top: 10 }).backgroundColor('rgba(0,125,255,0.1)').borderRadius(8)
-          .onClick(() => {
-            // 逻辑在 onClick 事件回调内执行是绝对安全的
+          }.width('95%').padding(12).margin({ top: 10 }).backgroundColor('rgba(0,125,255,0.1)').borderRadius(8).onClick(() => {
             let targetIndex: number = this.currentFolderVideos.findIndex(v => v.videoUri === this.lastPlayUri);
-            if (targetIndex !== -1) {
-              this.enterPlayer(targetIndex, this.lastPlayTime);
-            }
+            if (targetIndex !== -1) { this.enterPlayer(targetIndex, this.lastPlayTime); }
           })
         }
 
@@ -446,10 +416,8 @@ struct Index {
                     Text(item.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
                     Text(item.srtUri ? `✓ 字幕已配对 (${item.srtName})` : '未发现字幕').fontSize(12).fontColor(item.srtUri ? '#00A354' : Color.Gray).margin({ top: 4 })
                   }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-                }
-                .width('100%').padding(15).border({ width: { bottom: 1 }, color: '#F0F0F0' })
-              }
-              .onClick(() => this.enterPlayer(index, 0))
+                }.width('100%').padding(15).border({ width: { bottom: 1 }, color: '#F0F0F0' })
+              }.onClick(() => this.enterPlayer(index, 0))
             })
           }.width('100%').layoutWeight(1)
         } else {
@@ -459,15 +427,15 @@ struct Index {
             Text('请点击右上角按钮分批导入视频和字幕').fontSize(14).fontColor(Color.Gray).margin({ top: 5 })
           }.layoutWeight(1).justifyContent(FlexAlign.Center)
         }
-      }
-      .layoutWeight(1).height('100%').backgroundColor('#FFFFFF')
-    }
-    .width('100%').height('100%')
+      }.layoutWeight(1).height('100%').backgroundColor('#FFFFFF')
+    }.width('100%').height('100%')
   }
 
   @Builder
   buildPlayerView() {
     Stack({ alignContent: Alignment.Bottom }) {
+
+      // 1. 视频核心渲染层（加入了互斥手势控制）
       Stack({ alignContent: Alignment.Center }) {
         XComponent({ id: 'video_player', type: 'surface', controller: this.xComponentController })
           .onLoad(() => { this.surfaceId = this.xComponentController.getXComponentSurfaceId(); })
@@ -475,11 +443,49 @@ struct Index {
           .height(this.videoRatio <= 1.52 ? '100%' : 'auto')
           .aspectRatio(this.videoRatio)
       }.width('100%').height('100%').backgroundColor(Color.Black)
-      .onClick(() => {
-        this.showControls = !this.showControls;
-        if (this.showControls) this.resetHideTimer();
-      })
+      .gesture(
+        // GestureMode.Exclusive 保证系统会排他性地识别手势：双击生效时，单击和长按都会被取消
+        GestureGroup(GestureMode.Exclusive,
+          // 双击：播放/暂停
+          TapGesture({ count: 2 })
+            .onAction(() => {
+              this.togglePlay();
+            }),
 
+          // 长按：开启二倍速
+          LongPressGesture({ repeat: false })
+            .onAction(() => {
+              // 只有在播放状态下才允许快进
+              if (this.isPlaying) {
+                this.isLongPressing = true;
+                if (this.avPlayer) this.avPlayer.setSpeed(media.PlaybackSpeed.SPEED_FORWARD_2_00_X);
+              }
+            })
+            // 松手时恢复原来的倍速
+            .onActionEnd(() => {
+              if (this.isLongPressing) {
+                this.isLongPressing = false;
+                if (this.avPlayer) this.avPlayer.setSpeed(this.speedMode);
+              }
+            })
+            // 预防弹窗等中断手势
+            .onActionCancel(() => {
+              if (this.isLongPressing) {
+                this.isLongPressing = false;
+                if (this.avPlayer) this.avPlayer.setSpeed(this.speedMode);
+              }
+            }),
+
+          // 单击：呼出/隐藏控制栏面板
+          TapGesture({ count: 1 })
+            .onAction(() => {
+              this.showControls = !this.showControls;
+              if (this.showControls) this.resetHideTimer();
+            })
+        )
+      )
+
+      // 2. 字幕渲染层
       if (this.currentSubtitle !== '' && this.isSubtitleEnabled) {
         Text(this.currentSubtitle)
           .fontSize(30).fontColor(Color.White).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
@@ -489,6 +495,20 @@ struct Index {
           .animation({ duration: 200, curve: Curve.EaseInOut })
       }
 
+      // 3. 长按快进 状态指示器
+      if (this.isLongPressing) {
+        Row() {
+          Text('>> 倍速播放中').fontColor(Color.White).fontSize(14).fontWeight(FontWeight.Bold)
+        }
+        .backgroundColor('rgba(0,0,0,0.7)')
+        .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+        .borderRadius(20)
+        // 绝对定位到屏幕顶部中央
+        .position({ x: '50%', y: 40 })
+        .translate({ x: '-50%' })
+      }
+
+      // 4. 控制栏面板
       if (this.showControls) {
         Column() {
           Row() {
@@ -522,6 +542,7 @@ struct Index {
 
               Blank()
 
+              // 点击选集按钮不再调起 bindSheet，而是修改 showPlaylistSheet 状态渲染右侧组件
               Text('选集').fontColor(Color.White).fontSize(16).margin({ right: 25 }).onClick(() => { this.showPlaylistSheet = true; this.showControls = false; })
               Text(this.isSubtitleEnabled ? '字幕: 开' : '字幕: 关').fontColor(Color.White).fontSize(16).margin({ right: 25 }).onClick(() => { this.isSubtitleEnabled = !this.isSubtitleEnabled; this.resetHideTimer(); })
               Text('倍速 ' + this.speedText).fontColor(Color.White).fontSize(16).bindMenu([
@@ -535,33 +556,73 @@ struct Index {
           }.width('100%').linearGradient({ direction: GradientDirection.Top, colors: [['rgba(0,0,0,0)', 0.0],['rgba(0,0,0,0.8)', 1.0]] })
         }.width('100%').height('100%').transition(TransitionEffect.OPACITY.animation({ duration: 300 }))
       }
+
+      // 5. 新版：右侧滑出式选集面板
+      if (this.showPlaylistSheet) {
+        Row() {
+          // 左侧透明区域，点击即可收起面板
+          Column().layoutWeight(1).height('100%')
+            .onClick(() => { this.showPlaylistSheet = false; })
+
+          // 右侧实体面板区域
+          Column() {
+            this.playlistPanel()
+          }
+          .width(340)
+          .height('100%')
+          .backgroundColor('rgba(25,25,25,0.95)')
+          // 核心动画：从屏幕右侧边缘（END）滑入和滑出
+          .transition(TransitionEffect.move(TransitionEdge.END).animation({ duration: 300, curve: Curve.FastOutSlowIn }))
+        }
+        .width('100%')
+        .height('100%')
+        .zIndex(99) // 确保选集面板始终悬浮于所有图层之上
+      }
     }.width('100%').height('100%').backgroundColor(Color.Black)
-    .bindSheet($$this.showPlaylistSheet, this.playlistSheet(), { height: '70%', backgroundColor: '#222', title: { title: '视频选集' }, dragBar: true })
   }
 
+  // 专属侧边栏 UI 重构
   @Builder
-  playlistSheet() {
+  playlistPanel() {
     Column() {
+      // 侧边栏标题区
       Row() {
-        Text('自动连播下一集').fontColor(Color.White).fontSize(16).layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.autoPlayNext }).selectedColor('#007DFF').onChange((isOn: boolean) => { this.autoPlayNext = isOn; })
-      }.width('100%').padding(20)
+        Text('视频选集').fontColor(Color.White).fontSize(18).fontWeight(FontWeight.Bold).layoutWeight(1)
+        Text('✕').fontColor(Color.Gray).fontSize(20).onClick(() => { this.showPlaylistSheet = false; })
+      }.width('100%').padding({ top: 20, left: 20, right: 20, bottom: 15 })
 
-      List({ space: 10 }) {
+      // 连播控制开关
+      Row() {
+        Text('自动连播下一集').fontColor(Color.White).fontSize(14).layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.autoPlayNext }).selectedColor('#007DFF').onChange((isOn: boolean) => { this.autoPlayNext = isOn; })
+      }.width('100%').padding({ left: 20, right: 20, bottom: 15 })
+
+      // 视频列表
+      List({ space: 12 }) {
         ForEach(this.currentFolderVideos, (item: VideoItem, index: number) => {
           ListItem() {
             Row() {
-              Text(`${index + 1}. ${item.name}`).fontColor(this.currentPlayIndex === index ? '#007DFF' : Color.White).fontSize(16).layoutWeight(1)
-              if (this.currentPlayIndex === index) { Text('▶').fontSize(20).fontColor('#007DFF') }
+              Text(`${index + 1}. ${item.name}`)
+                .fontColor(this.currentPlayIndex === index ? '#007DFF' : Color.White)
+                .fontSize(14).layoutWeight(1).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+
+              if (this.currentPlayIndex === index) {
+                Text('▶').fontSize(16).fontColor('#007DFF').margin({ left: 10 })
+              }
             }
-            .width('100%').padding(15).backgroundColor(this.currentPlayIndex === index ? 'rgba(0,125,255,0.1)' : '#333').borderRadius(8)
+            .width('100%').padding(15)
+            .backgroundColor(this.currentPlayIndex === index ? 'rgba(0,125,255,0.1)' : 'rgba(255,255,255,0.05)')
+            .borderRadius(8)
           }
           .onClick(() => {
-            if (this.currentPlayIndex !== index) { this.loadVideoByIndex(index, 0); this.currentPlayIndex = index; }
-            this.showPlaylistSheet = false;
+            if (this.currentPlayIndex !== index) {
+              this.loadVideoByIndex(index, 0);
+              this.currentPlayIndex = index;
+            }
+            // 选集后不强制收起面板，用户可以点击透明区主动收起
           })
         })
-      }.padding({ left: 20, right: 20, bottom: 20 }).layoutWeight(1)
+      }.padding({ left: 15, right: 15, bottom: 20 }).layoutWeight(1)
     }.width('100%').height('100%')
   }
 }
